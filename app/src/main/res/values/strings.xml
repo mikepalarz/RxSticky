@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">RxSticky</string>
+
+    <!--StickyFragment resources-->
+    <string name="sticky_button_text">Let\'s observe</string>
+
+</resources>
