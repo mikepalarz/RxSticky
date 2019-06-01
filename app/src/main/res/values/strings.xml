@@ -2,6 +2,10 @@
     <string name="app_name">RxSticky</string>
 
     <!--StickyFragment resources-->
-    <string name="sticky_button_text">Let\'s observe</string>
+    <string name="fragment_sticky_subscribe_button_before_subscribe_text">Let\'s observe</string>
+    <string name="fragment_sticky_subscribe_button_during_subscription_text">Stop observing</string>
+    <string name="fragment_sticky_clear_broadcasts_button_text">Clear broadcasts</string>
+    <string name="fragment_sticky_textview_hint">No broadcasts yet</string>
+    <string name="fragment_sticky_textview_logging_broadcasts">Logging broadcasts&#8230;</string>
 
 </resources>
