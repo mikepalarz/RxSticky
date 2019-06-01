@@ -13,21 +13,34 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.Toast;
 
 import com.palarz.mike.rxsticky.R;
 
-import io.reactivex.subjects.BehaviorSubject;
+import java.util.Arrays;
+
+import io.reactivex.Observable;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.CompositeDisposable;
 
 public class StickyFragment extends Fragment {
 
-    private Button mStickyButton;
-    private BroadcastReceiver mReceiver;
-    private IntentFilter mFilter;
-
-    private BehaviorSubject<String> mSubject;
-
     public static final String TAG = StickyFragment.class.getSimpleName();
+
+    private Button mStickyButton;
+    private final IntentFilter mBatteryFilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+    private final IntentFilter mAirplaneModeFilter = new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED);
+    private final IntentFilter mTimeFilter = new IntentFilter(Intent.ACTION_TIME_TICK);
+    private final IntentFilter mScreenOnFilter = new IntentFilter(Intent.ACTION_SCREEN_ON);
+    private final IntentFilter mScreenOffFilter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+
+    private Observable<String> mBatteryObservable;
+    private Observable<String> mAirplaneModeObservable;
+    private Observable<String> mTimeObservable;
+    private Observable<String> mScreenOnObservable;
+    private Observable<String> mScreenOffObservable;
+    private Observable<String> mAllBroadcasts;
+    private CompositeDisposable mDisposable = new CompositeDisposable();
+    private boolean mSubscriptionToggle;
 
     public static StickyFragment newInstance() {
         StickyFragment fragment = new StickyFragment();
@@ -42,21 +55,17 @@ public class StickyFragment extends Fragment {
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        mSubject = BehaviorSubject.create();
+        mBatteryObservable = broadcastObservable(mBatteryFilter);
+        mAirplaneModeObservable = broadcastObservable(mAirplaneModeFilter);
+        mTimeObservable = broadcastObservable(mTimeFilter);
+        mScreenOnObservable = broadcastObservable(mScreenOnFilter);
+        mScreenOffObservable = broadcastObservable(mScreenOffFilter);
+        mAllBroadcasts = Observable
+                .merge(Arrays.asList(mBatteryObservable, mAirplaneModeObservable, mTimeObservable, mScreenOnObservable, mScreenOffObservable))
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeOn(AndroidSchedulers.mainThread());
 
-        mReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                mSubject.onNext("Intent action: " + intent.getAction());
-                if (intent.getAction().equals(Intent.ACTION_AIRPLANE_MODE_CHANGED)) {
-                    mSubject.onNext("Airplane mode on: " + intent.getBooleanExtra("state", false));
-                }
-            }
-        };
-
-        mFilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-        mFilter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
-        getActivity().registerReceiver(mReceiver, mFilter);
+        mSubscriptionToggle = false;
     }
 
     @Nullable
@@ -64,7 +73,28 @@ public class StickyFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_sticky, container, false);
         mStickyButton = rootView.findViewById(R.id.sticky_button);
-        mStickyButton.setOnClickListener( (View view) -> mSubject.subscribe(string -> Log.i(TAG, string)));
+        mStickyButton.setOnClickListener((View view) -> {
+
+            mSubscriptionToggle = !mSubscriptionToggle;
+
+            if (mSubscriptionToggle) {
+                mAllBroadcasts
+                        .doOnDispose(() -> Log.i(TAG, "Unsubscribed from all broadcasts"))
+                        .subscribe(
+                        string -> Log.i(TAG, string),
+                        (error) -> Log.e(TAG, "Error occurred: " + error),
+                        // onComplete() should never be called since these broadcasts will always
+                        // be sent. I.e., we have a never-ending stream of events.
+                        () -> Log.i(TAG, "onComplete()"),
+                        disposable -> {
+                            Log.i(TAG, "Subscribed to all broadcasts");
+                            mDisposable.add(disposable);
+                        });
+            } else {
+                mDisposable.clear();
+            }
+
+        });
 
         return rootView;
     }
@@ -73,6 +103,32 @@ public class StickyFragment extends Fragment {
     public void onDestroy() {
         super.onDestroy();
 
-        getActivity().unregisterReceiver(mReceiver);
+        if (!mDisposable.isDisposed()) {
+            mDisposable.dispose();
+        }
     }
+
+    private Observable<String> broadcastObservable(IntentFilter filter) {
+        Observable<String> observable = Observable.create(observer -> {
+            Log.i(TAG, Thread.currentThread().getName() + ": Creating observable");
+            final BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String action = intent.getAction();
+                    observer.onNext("Action: " + action);
+
+                    if (action.equals(mAirplaneModeFilter.getAction(0))) {
+                        observer.onNext("Airplane mode on: " + intent.getBooleanExtra("state", false));
+                    } else if (action.equals(mTimeFilter.getAction(0))) {
+                        observer.onNext("And time goes on...");
+                    }                 }
+            };
+
+            getActivity().registerReceiver(receiver, filter);
+        });
+
+        return observable.subscribeOn(AndroidSchedulers.mainThread())
+                .observeOn(AndroidSchedulers.mainThread());
+    }
+
 }
